@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>home</title>
+    <script>
+        usuarios = [
+            {nombre: 'bartolo', email: 'bartolo@test.com'},
+            {nombre: 'juan', email: 'juan@test.com'},
+            {nombre: 'pepe', email: 'pipo@test.com'},
+            {nombre: 'manuel', email: 'manuel@test.com'},
+            {nombre: 'bartolo', email: 'bartolazo@test.com'}
+        ];
+        window.onload = function () {
+            if (!window.indexedDB){
+                alert("El navegador no soporta la BD");
+            }
+
+            //conexión con la DB.  nombre de la BD y el segundo es la versión.
+
+            connection = window.indexedDB.open("usuarios", 2);
+            connection.onlocked = function (event) {
+                //alert("cierra la otra pestaña para continuar");
+
+            }
+            connection.onerror = function (event) {
+                console.log("Error en la apertura de la BD", event.target.errorCode);
+            };
+            connection.onsuccess = function (event) {
+                console.log("Base de datos abierta", event.target.result);
+            };
+            //fallo cuando se abre la bd con version distinta
+            connection.onupgradeneeded = function (event) {
+                var db = event.target.result;
+
+                db.onversionchange = function (event) {
+                    //alert("existe una nueva versión de la base de datos recarga para continuar");
+                    db.close();
+                    location.reload(true); //flase pilla la bd de la caxe sino la pilla de nuevo del servidor
+
+                }
+                switch (db.version){
+
+                    case 1:
+                        //si no existe la tabla  en la bd
+                        // la creamos con un índice autoincrementado.
+                        if (!db.objectStoreNames.contains('usuarios')){
+                            obUsuarios = db.createObjectStore('usuarios',{autoIncrement: true});
+                            //indice secundario: nombre_indice, columna_indice, options
+                            //clave alterna en el index
+                            obUsuarios.createIndex("index_email", "email", {unique:true})
+                            console.log("Tabla 'usuarios' creada")
+                        }
+                        break;
+                    case 2:
+                        transaccion = event.target.transaction;
+                        var user_table = transaccion.objectStore("usuarios");
+                        user_table.createIndex("index_name", "nombre", {unique:false});
+                        break;
+                    case 3:
+                        break;
+                }
+            }
+        }
+        function addUsers(){
+            //Abrir conexión -> Abrir transacción -> Operación
+            //en algunos fallos los podemos arreglar borrando la bd en aplication con la consola
+            var db = window.indexedDB.open("usuarios");
+            db.onsuccess = function (event) {
+                console.log("Base de datos abierta mediante el método add");
+                //lista, modos readwrite readonly
+                var transaction = db.result.transaction(["usuarios"], "readwrite");
+                transaction.onerror = function (event) {
+                    console.log("Error en la transacción de addUsers", event)
+                }
+
+                var userTable = transaction.objectStore("usuarios")
+                for(var user in usuarios){
+                    userTable.add(usuarios[user]);
+                }
+            }
+        }
+        function userList() {
+            var list = document.getElementById("lista");
+            var user_table = connection.result.transaction(['usuarios'], "readonly").objectStore("usuarios");
+            //Abrimos un cursor sobre la tabla para poder iterar sobre ella
+            user_table.openCursor().onsuccess = function(event){
+                console.log(event)
+                var cursor = event.target.result;
+                if(cursor){
+                    var user = document.createElement("li");
+                    user.innerHTML="clave: " + cursor.key + " valor: " + cursor.value.nombre + " correo: " + cursor.value.email;
+                    list.appendChild(user);
+                    cursor.continue();
+                }else{
+                    console.log("No hay más usuarios.")
+                }
+            }
+        }
+        function listaBartolos() {
+            var list = document.getElementById("lista");
+            var user_table = connection.result.transaction(['usuarios'], "readonly").objectStore("usuarios");
+            var index = user_table.index("index_name");
+            var query = IDBKeyRange.only("bartolo");
+            index.openCursor(query).onsuccess = function (event) {
+                var cursor = event.target.result;
+                if(cursor){
+                    var user = document.createElement("li");
+                    user.innerHTML="clave: " + cursor.key + " correo: " + cursor.value.email;
+                    list.appendChild(user);
+                    cursor.continue();
+                }else{
+                    console.log("No hay más Bartolos");
+                }
+            }
+        }
+
+        function borrarPrimerBartolo() {
+            //queremos eliminar el primer bartolo que haya pero necesitamos su clave primaria por lo que lo primero que haremos es un query
+            var tusuarios = connection.result.transaction(["usuarios"],"readwrirte").objectStore("usuarios");
+            var index  = tusuarios.index("inombre");//queremos su clave primaria
+            index.getKey('bartolo').onsuccess=function (event) {
+                if(event.target.result)tusuarios.delete(event.target.result);
+                else console.log('no quedan mas bartolos');
+
+            }
+
+        }
+
+        function modificarPerico() {
+            var tusuarios = connection.result.transaction(["usuarios"],"readwrirte").objectStore("usuarios");
+            var index= tusuarios.index("imail");
+            index.openCursor(usuarios(3).email).onsuccess= function (event) {
+                 console.log(event);
+                var usuario= event.target.result.value;
+                usuario.nombre = usuario.nom + Math.floor(Math.random()*10);
+
+                var requestUpdate =  tusuarios.put(usuario,event.target.result.primaryKey);
+                requestUpdate.onerror= function (event) {
+                    console.log('Error en la actualizacion de Perico');
+
+                }
+
+                requestUpdate.onsuccess=function (event) {
+                    console.log("Perico fue actualizado");
+
+                }
+
+            }
+
+        }
+    </script>
+</head>
+<body>
+<div style="text-align: center; margin-top: 50px">
+    <button onclick="addUsers()">Añadir usuarios</button>
+    <button onclick="userList()">Lista usuarios</button>
+    <button onclick="listaBartolos()">Lista Bartolos</button>
+    <button onclick="borrarPrimerBartolo()">Borrar Bartolo</button>
+    <button onclick="modificarPerico()">Modifica Perico</button>
+
+</div>
+<ul id="lista">
+
+</ul>
+</body>
